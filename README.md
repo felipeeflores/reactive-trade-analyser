@@ -1,4 +1,4 @@
-# ffm-trader
+# reactive-trader
 
 Simple app using monix functional reactive streams.
 
