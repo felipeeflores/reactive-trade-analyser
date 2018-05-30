@@ -1,4 +1,4 @@
-# reactive-trader
+# reactive-trade-analyser
 
 Simple app using monix functional reactive streams.
 
