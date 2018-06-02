@@ -6,7 +6,7 @@ import org.scalatest._
 
 import cats.implicits._
 
-class StockMarketEntryParserSpec extends FunSpec with Matchers with TypeCheckedTripleEquals with EitherValues {
+class RawStockMarketDataParserSpec extends FunSpec with Matchers with TypeCheckedTripleEquals with EitherValues {
 
   describe("StockMarketDataParser") {
 
@@ -21,7 +21,7 @@ class StockMarketEntryParserSpec extends FunSpec with Matchers with TypeCheckedT
         StockMarketEntry(ticker = Ticker("3DP"), date = Datestamp("20180102"), open = Price(0.145), close = Price(0.14))
       ).map(Right(_))
 
-      val result = StockMarketDataParser.parse(RawStockMarketData("good-file", validCsv))
+      val result = RawStockMarketDataParser.parse(RawStockMarketData("good-file", validCsv))
 
       result should === (expected)
     }
@@ -32,7 +32,7 @@ class StockMarketEntryParserSpec extends FunSpec with Matchers with TypeCheckedT
         "3DP,20180102,0.145,0.145,0.14"
       ).mkString("\n")
 
-      val result = StockMarketDataParser.parse(RawStockMarketData("bad-file", brokenCsv))
+      val result = RawStockMarketDataParser.parse(RawStockMarketData("bad-file", brokenCsv))
 
       result.foreach(println)
       val (errors, _) = result.separate
