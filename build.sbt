@@ -3,7 +3,7 @@ lazy val root = (project in file(".")).
     inThisBuild(List(
       organization := "scalable",
       scalaVersion := "2.12.6",
-      version := "0.1.0-SNAPSHOT"
+      version := "0.1.0"
     )),
     name := "reactive-trade-analyser",
     libraryDependencies ++= Seq(
