@@ -1,6 +1,6 @@
 package analyser
 
-import analyser.StockTradeAnalyser.{handleErrors, printInfo, printPrime}
+import analyser.StockTradeAnalyser.{handleErrors, printInfo}
 import analyser.model._
 import cats.data.NonEmptyVector
 import cats.implicits._
@@ -16,7 +16,7 @@ import scala.reflect.io.Path
 
 class StockTradeAnalyser(extractRawData: Path => Task[Vector[RawStockMarketData]],
                          parseRawData: RawStockMarketData => Vector[ErrorOr[StockMarketEntry]],
-                         enrichData: Seq[Vector[StockMarketEntry]] => Vector[EnrichedStockMarketEntry],
+                         enrichData: (IndicatorType, Seq[Vector[StockMarketEntry]]) => Vector[EnrichedStockMarketEntry],
                          reportData: (Vector[EnrichedStockMarketEntry], Option[Int]) => Task[Unit]
                         ) {
 
@@ -24,6 +24,8 @@ class StockTradeAnalyser(extractRawData: Path => Task[Vector[RawStockMarketData]
               tickers: NonEmptyVector[Ticker],
               indicators: Vector[IndicatorType],
               dataFrameSize: Option[Int]) = {
+
+    val indicatorsToCompute = if (indicators.nonEmpty) indicators else Vector(Sma10, Sma50)
 
     val rawDataObservable: Observable[Vector[RawStockMarketData]] = Observable.fromTask(extractRawData(Path(config.marketDataDir)))
 
@@ -41,13 +43,25 @@ class StockTradeAnalyser(extractRawData: Path => Task[Vector[RawStockMarketData]
       }
     }
 
-    val sma10EnrichedData = filteredMarketData.map { tickerData =>
-      tickerData.flatMap {
-        case (_, data) => enrichData(data.sliding(Sma10.periodSpan, 1).toSeq)
+    val combinedData: Observable[Vector[EnrichedStockMarketEntry]] = filteredMarketData.map { tickerData =>
+      indicatorsToCompute.flatMap { indicatorType =>
+        tickerData.flatMap {
+          case (_, data) => enrichData(indicatorType, data.sliding(indicatorType.periodSpan, 1).toSeq)
+        }.toVector
+      }
+    }
+
+    val aggregatedData = combinedData.map { enrichedData =>
+      enrichedData.groupBy(_.stockMarketEntry).map {
+        case (entry, enrichedEntry) => (entry, enrichedEntry.flatMap(_.indicators))
+      }.collect {
+        case (entry, indicators) if indicators.length == indicatorsToCompute.length => EnrichedStockMarketEntry(entry, indicators.toSet)
       }.toVector
     }
 
-    val reporter = sma10EnrichedData.mapTask(data => reportData(data, dataFrameSize))
+
+
+    val reporter = aggregatedData.mapTask(data => reportData(data, dataFrameSize))
 
     val task = reporter
       .consumeWith(Consumer.complete)
@@ -86,11 +100,11 @@ object StockTradeAnalyser {
 
   def apply(): StockTradeAnalyser = {
 
-    val enrichData: Seq[Vector[StockMarketEntry]] => Vector[EnrichedStockMarketEntry] = batch => {
+    val enrichData: (IndicatorType, Seq[Vector[StockMarketEntry]]) => Vector[EnrichedStockMarketEntry] = (iType, batch) => {
       printInfo("Processing batch of size " + batch.size)
       val sma10EnrichedData: Seq[Option[EnrichedStockMarketEntry]] = batch.map(marketEntries => {
         printInfo(s"market entries ${marketEntries.length}")
-        val indicators: Option[Indicator] = Indicators.computeSimpleMovingAverage(Sma10, marketEntries)
+        val indicators: Option[Indicator] = Indicators.computeSimpleMovingAverage(iType, marketEntries)
         marketEntries.lastOption.map(entry =>
           EnrichedStockMarketEntry(entry, indicators.toSet)
         )
@@ -105,9 +119,11 @@ object StockTradeAnalyser {
 
 
     val reporter = (results: Vector[EnrichedStockMarketEntry], _: Option[Int]) => Task {
-      printPrime("SYM,DATE,EOD,10SMA")
+      printPrime("SYM,DATE,EOD,10SMA,50SMA")
       results.foreach(result => printPrime(
-        s"${result.stockMarketEntry.ticker},${result.stockMarketEntry.date},${result.stockMarketEntry.close},${result.indicators.find(_.indicatorType == Sma10)}"
+        s"${result.stockMarketEntry.ticker},${result.stockMarketEntry.date},${result.stockMarketEntry.close}," +
+          s"${result.indicators.find(_.indicatorType == Sma10)}" +
+          s"${result.indicators.find(_.indicatorType == Sma50)}"
       ))
     }
 
