@@ -1,13 +1,23 @@
 package analyser
 
-import analyser.model.Ticker
 import cats.data.NonEmptyVector
 
 object Main {
 
   def main(args: Array[String]): Unit = {
-    val analyser = StockTradeAnalyser()
 
-    analyser.analyse(Config(), NonEmptyVector(Ticker("1AD"), Vector.empty), Vector.empty, None)
+    val maybeCommandLineArgs = CommandLineArgs(args)
+
+    maybeCommandLineArgs match {
+      case Some(commandLineArgs) =>
+        val maybeTickers = NonEmptyVector.fromVector(commandLineArgs.symbols)
+        val analyser = StockTradeAnalyser()
+        maybeTickers.foreach(tickers =>
+          analyser.analyse(Config(), tickers, commandLineArgs.indicators, commandLineArgs.days)
+        )
+      case None => ConsoleOps.printInvalidCommandMessageUsage()
+    }
+
+
   }
 }
