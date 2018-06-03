@@ -11,6 +11,7 @@ import monix.reactive.{Consumer, Observable}
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import scala.reflect.io.Path
+import scala.util.Try
 
 
 class StockTradeAnalyser(extractRawData: Path => Task[Vector[RawStockMarketData]],
@@ -22,13 +23,13 @@ class StockTradeAnalyser(extractRawData: Path => Task[Vector[RawStockMarketData]
   def analyse(config: Config,
               tickers: NonEmptyVector[Ticker],
               indicators: Vector[IndicatorType],
-              dataFrameSize: Option[Int]) = {
+              dataFrameSize: Option[Int]): Try[Unit] = {
 
     val indicatorsToCompute = if (indicators.nonEmpty) indicators else Vector(Sma10, Sma50)
 
-    val rawDataObservable: Observable[Vector[RawStockMarketData]] = Observable.fromTask(extractRawData(Path(config.marketDataDir)))
+    val rawData: Observable[Vector[RawStockMarketData]] = Observable.fromTask(extractRawData(Path(config.marketDataDir)))
 
-    val stockMarketData: Observable[Vector[StockMarketEntry]] = rawDataObservable.mapTask(rawData =>
+    val stockMarketParsedData: Observable[Vector[StockMarketEntry]] = rawData.mapTask(rawData =>
       Task {
         val (errors, stockMarketData) = rawData.flatMap(parseRawData).separate
         handleErrors(errors)
@@ -36,13 +37,15 @@ class StockTradeAnalyser(extractRawData: Path => Task[Vector[RawStockMarketData]
       }
     )
 
-    val filteredMarketData: Observable[Map[Ticker, Vector[StockMarketEntry]]] = stockMarketData.mapTask { entries =>
-      Task {
-        entries.filter(entry => tickers.toVector.contains(entry.ticker)).groupBy(_.ticker)
+    val filteredAndGroupedData: Observable[Map[Ticker, Vector[StockMarketEntry]]] = {
+      stockMarketParsedData.mapTask { entries =>
+        Task {
+          entries.filter(entry => tickers.toVector.contains(entry.ticker)).groupBy(_.ticker)
+        }
       }
     }
 
-    val combinedData: Observable[Vector[EnrichedStockMarketEntry]] = filteredMarketData.map { tickerData =>
+    val enrichedData: Observable[Vector[EnrichedStockMarketEntry]] = filteredAndGroupedData.map { tickerData =>
       indicatorsToCompute.flatMap { indicatorType =>
         tickerData.flatMap {
           case (_, data) => enrichData(indicatorType, data.sliding(indicatorType.periodSpan, 1).toSeq)
@@ -50,8 +53,8 @@ class StockTradeAnalyser(extractRawData: Path => Task[Vector[RawStockMarketData]
       }
     }
 
-    val aggregatedData = combinedData.map { enrichedData =>
-      enrichedData.groupBy(_.stockMarketEntry).map {
+    val aggregatedData = enrichedData.map { entries =>
+      entries.groupBy(_.stockMarketEntry).map {
         case (entry, enrichedEntry) => (entry, enrichedEntry.flatMap(_.indicators))
       }.collect {
         case (entry, computedIndicators) if computedIndicators.length == indicatorsToCompute.length =>
@@ -66,7 +69,6 @@ class StockTradeAnalyser(extractRawData: Path => Task[Vector[RawStockMarketData]
       .materialize
 
     Await.result(task.runAsync, Duration.Inf)
-
   }
 
 }

@@ -88,7 +88,7 @@ class StockTradeAnalyserSpec extends FunSpec with Matchers with TypeCheckedTripl
         indicatorEntries.length should ===(50 * 2) //50 entries per ticker
       }
 
-      it("should contain all indicators") {
+      it("should contain all the requested indicators") {
         val indicatorEntries = testHelper.dataBuffer.map(_.indicators.size)
 
         indicatorEntries.forall(_ == indicatorsToCompute.size) should ===(true)
