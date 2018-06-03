@@ -128,11 +128,9 @@ private class StockTradeAnalyserSpecHelper(periodSpanToGenerate: Int) {
     }).toVector
   }
 
-  private def reportData: (Vector[EnrichedStockMarketEntry], Option[Int]) => Task[Unit] = (enrichedEntries, _) => {
-   Task {
-     dataBuffer.append(enrichedEntries: _*)
-   }
-  }
+  private def reportData: (Vector[EnrichedStockMarketEntry], Option[Int], Vector[IndicatorType]) => Task[Unit] =
+    (enrichedEntries, _, _) =>  Task { dataBuffer.append(enrichedEntries: _*)}
+
 
   val stockTradeAnalyser = new StockTradeAnalyser(
     extractRawData = extractDummyRawData,
